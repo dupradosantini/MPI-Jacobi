@@ -47,15 +47,42 @@ int main(int argc, char *argv[])
         int orderOfMatrix = atoi(argv[2]);      //Parametro de entrada, ordem da matriz gerada.
         int NumberOfProcecess = atoi(argv[3]); //Parametro de entrada, numero de processos gerados.
         int numberOfThreads = atoi(argv[4]);  //Parametro de entrada, numero de threads por processo.
+        int i,j;
 
         if(my_rank==0)
         {
             MPI_Status status;
             MPI_Recv(&linhaEscolhida, 1, MPI_INT, 0, 1, parentcomm, &status); //Recebimento da linha de testagem.
             printf("I'm the spawned process number %d on processor %s.\n A linha escolhida foi: %d \n", my_rank, processor_name,linhaEscolhida);
+            //*****************************GERANDO MATRIZ**************************************
+            int** matrix = (int**)malloc(orderOfMatrix*sizeof(int*));
+            for(i=0;i<orderOfMatrix;i++){
+                matrix[i]=(int*)malloc(orderOfMatrix*sizeof(int));
+            }
+            int* linhaTeste = (int*)malloc(orderOfMatrix*sizeof(int));
+            //Preenchimento provisorio
+            int count=0;
+            for(i=0;i<orderOfMatrix;i++)
+                for(j=0;j<orderOfMatrix;j++){
+                    matrix[i][j] = ++count;
+                    if(i==linhaEscolhida)
+                        linhaTeste[j]=matrix[i][j];
+                }
+            //Print matriz
+            printf("\n Print matriz: \n");
+            for(i=0;i<orderOfMatrix;i++){
+                for(j=0;j<orderOfMatrix;j++)
+                    printf("%d ",matrix[i][j]);
+                printf("\n");
+            }
+            //Print linha escolhida
+            printf("\n Print linha teste: \n");
+            for(i=0;i<orderOfMatrix;i++)
+                printf("%d ", linhaTeste[i]);
+            //*****************************GERANDO MATRIZ**************************************
         }else
         {   //Todos filhos com exceção do 0 executam aqui.
-            printf("I'm the spawned process number %d on processor %s.\n", my_rank, processor_name);
+            printf("\nI'm the spawned process number %d on processor %s.\n", my_rank, processor_name);
         }
     }// Fim do else que separa os spawns do root process
     fflush(stdout);
