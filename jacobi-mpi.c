@@ -65,6 +65,7 @@ int main(int argc, char *argv[])
             MPI_Recv(&linhaEscolhida, 1, MPI_INT, 0, 1, parentcomm, &status); //Recebimento da linha de testagem.
             printf("I'm the spawned process number %d on processor %s.\n A linha escolhida foi: %d \n", my_rank, processor_name,linhaEscolhida);
             //*****************************GERANDO MATRIZ**************************************
+            int* vetEnvioMatrix = (int*)malloc(orderOfMatrix*orderOfMatrix*sizeof(int));
             int** matrix = (int**)malloc(orderOfMatrix*sizeof(int*));
             for(i=0;i<orderOfMatrix;i++){
                 matrix[i]=(int*)malloc(orderOfMatrix*sizeof(int));
@@ -78,6 +79,18 @@ int main(int argc, char *argv[])
                     if(i==linhaEscolhida)
                         linhaTeste[j]=matrix[i][j];
                 }
+            j=0;
+            int k=0;
+            for(i=0;i<orderOfMatrix*orderOfMatrix;i++)
+            {
+                if(j==orderOfMatrix){
+                    j=0;
+                    k++;
+                }
+                vetEnvioMatrix[i] = matrix[k][j];
+                printf("%d ",vetEnvioMatrix[i]);
+                j++;
+            }
             //Print matriz
             printf("\n Print matriz: \n");
             for(i=0;i<orderOfMatrix;i++){
@@ -92,32 +105,55 @@ int main(int argc, char *argv[])
             //*****************************GERANDO MATRIZ**************************************
 
             //Tentativa inicial envio variavel
-            int* vetor_rec = (int*)malloc(proporcao*sizeof(int));
+            printf("\n Vetor Quantidades:\n");
+            int* vetorRecebLinhas = (int*)malloc(proporcao*sizeof(int));
             int* vetorQuantidades = (int*)malloc(NumberOfProcecess*sizeof(int));
             int* vetorDisplacements = (int*)malloc(NumberOfProcecess*sizeof(int));
             //Preenchimento quantidades e displacements
             for(i=0;i<NumberOfProcecess;i++){
-                if(i=NumberOfProcecess-1){
+                if(i==NumberOfProcecess-1){
                     vetorQuantidades[i] = quantidadePiorCaso;
                     vetorDisplacements[i] = proporcao*orderOfMatrix*i;
                 }else{
                     vetorQuantidades[i] = proporcao*orderOfMatrix;
                     vetorDisplacements[i] = proporcao*orderOfMatrix*i;
                 }
+                printf("%d ", vetorQuantidades[i]);
             }
-
-            MPI_Scatterv(matrix, vetorQuantidades, vetorDisplacements, MPI_INT, vetor_rec, orderOfMatrix*proporcao, MPI_INT, 0, MPI_COMM_WORLD);
+            MPI_Barrier(MPI_COMM_WORLD);
+            MPI_Scatterv(vetEnvioMatrix, vetorQuantidades, vetorDisplacements, MPI_INT, vetorRecebLinhas, orderOfMatrix*proporcao, MPI_INT, 0, MPI_COMM_WORLD);
             //DEPOIS DO SCATTER PODE DAR FREE NA MATRIX, vetQuantidades e vetDisplacements.
+            //prints dos recebimentos
+            printf("\n Print Recebimentos \n");
+            int quantoPercorrer = (my_rank == (NumberOfProcecess-1)) ? quantidadePiorCaso : proporcao*orderOfMatrix;
+            for(i=0;i<quantoPercorrer;i++){
+                printf("%d ",vetorRecebLinhas[i]);
+            }
+            for(i=0;i<orderOfMatrix;i++)
+                free(matrix[i]);
+            free(matrix);
+            free(vetorDisplacements);
+            free(vetorQuantidades);
+            //fim print dos recebimentos
         }else
         {   //Todos filhos com exceção do 0 executam aqui.
             printf("\nI'm the spawned process number %d on processor %s.\n", my_rank, processor_name);
             //Tentativa inicial envio variavel
             int **matrix;
-            int *vetorQuantidades,*vetorDisplacements;
+            int *vetorQuantidades,*vetorDisplacements,*vetEnvioMatrix;
             int quantoReceber = (my_rank == (NumberOfProcecess-1)) ? quantidadePiorCaso : proporcao*orderOfMatrix;
-            int* vetor_rec = (int*)malloc(quantoReceber*sizeof(int));
-            MPI_Scatterv(matrix, vetorQuantidades, vetorDisplacements, MPI_INT, vetor_rec, quantoReceber, MPI_INT, 0, MPI_COMM_WORLD);
+            int* vetorRecebLinhas = (int*)malloc(quantoReceber*sizeof(int));
+            MPI_Barrier(MPI_COMM_WORLD);
+            MPI_Scatterv(vetEnvioMatrix, vetorQuantidades, vetorDisplacements, MPI_INT, vetorRecebLinhas, quantoReceber, MPI_INT, 0, MPI_COMM_WORLD);
+            //prints dos recebimentos
+            printf("\n Print Recebimentos \n");
+            int quantoPercorrer = (my_rank == (NumberOfProcecess-1)) ? quantidadePiorCaso : proporcao*orderOfMatrix;
+            for(i=0;i<quantoPercorrer;i++){
+                printf("%d ",vetorRecebLinhas[i]);
+            }
+            //fim print dos recebimentos
         }
+        printf("\n");
     }// Fim do else que separa os spawns do root process
     fflush(stdout);
     MPI_Finalize();
