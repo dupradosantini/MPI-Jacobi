@@ -70,9 +70,9 @@ int main(int argc, char *argv[])
         int linhasPorProcesso = orderOfMatrix/NumberOfProcecess;
         printf("\n Quantas linhas por processo: %d  e resto: %d \n",linhasPorProcesso, orderOfMatrix%NumberOfProcecess);
         //Fim calculo linhasPorProcesso
-        int *vetorRecebLinhas, *vetorRecebimentoB;
+        int *vetorRecebLinhas, *vetorRecebimentoB, *vetorRecebimentoDiag;
         int **matrix;
-        int *vetEnvioMatrix,*vetorB;
+        int *vetEnvioMatrix,*vetorB, *diagPrincipal;
 
         if(my_rank==0)
         {
@@ -82,6 +82,7 @@ int main(int argc, char *argv[])
             //*****************************GERANDO MATRIZ**************************************
             srand(64591);
             vetorB = (int*)malloc(orderOfMatrix*sizeof(int));
+            diagPrincipal = (int*)malloc(orderOfMatrix*sizeof(int));
             vetEnvioMatrix = (int*)malloc(orderOfMatrix*orderOfMatrix*sizeof(int));
             int* somaProvisoria = (int*)malloc(orderOfMatrix*sizeof(int));
             matrix = (int**)malloc(orderOfMatrix*sizeof(int*));
@@ -91,18 +92,47 @@ int main(int argc, char *argv[])
             }
             int* linhaTeste = (int*)malloc(orderOfMatrix*sizeof(int));
             //Preenchimento
-            for(i=0;i<orderOfMatrix;i++){
+            /* for(i=0;i<orderOfMatrix;i++){
                 for(j=0;j<orderOfMatrix;j++){
                     if (i != j){
                         matrix[i][j] = (rand() % (RAND_UPPER_BOUND2 - RAND_LOWER_BOUND + 1)) + RAND_LOWER_BOUND;
                        somaProvisoria[i] =somaProvisoria[i] + matrix[i][j];
                     }
                     matrix[i][i] = (rand() % ((RAND_UPPER_BOUND2 + somaProvisoria[i]) - RAND_LOWER_BOUND + 1)) + (somaProvisoria[i] + 1); // posicao diagonal principal > soma dos outros elementos.
+                    //matrix[i][i]=0;
+                    diagPrincipal[i] = matrix[i][i];
                     if(i==linhaEscolhida)
                         linhaTeste[j]=matrix[i][j];
                 }
                 vetorB[i] = (rand() % (10*RAND_UPPER_BOUND - RAND_LOWER_BOUND + 1)) + 2*somaProvisoria[i];
-            }
+            } */
+
+            matrix[0][0] =4; //Diagonal Princ (geracao hardcoded pra testes.)
+		    matrix[0][1] =2;
+		    matrix[0][2] =1;
+            // matrix[0][3] =0;
+            matrix[1][0] =1;
+            matrix[1][1] =3; //Diagonal Princ
+            matrix[1][2] =1;
+        // matrix[1][3] =0;
+            matrix[2][0] =2;
+            matrix[2][1] =3;
+            matrix[2][2] =6; //Diagonal Princ
+        // matrix[2][3] =0;
+        // matrix[3][0] =5;
+        // matrix[3][1] =5;
+            //matrix[3][2] =5;
+            //matrix[3][3] =16; //Diagonal Princ
+
+            //int vetorB[4] = {7, -8, 6, 5};
+            vetorB[0]=7;
+            vetorB[1]=-8;
+            vetorB[2]=6;
+            //vetorB[3]=5;
+
+            diagPrincipal[0]=4;
+            diagPrincipal[1]=3;
+            diagPrincipal[2]=6;
 
             j=0;
             k=0;
@@ -121,8 +151,10 @@ int main(int argc, char *argv[])
         }
         vetorRecebLinhas = (int*)malloc(linhasPorProcesso*orderOfMatrix*sizeof(int));
         vetorRecebimentoB = (int*)malloc(linhasPorProcesso*sizeof(int));
+        vetorRecebimentoDiag =(int*)malloc(linhasPorProcesso*sizeof(int));
         MPI_Scatter(vetEnvioMatrix, linhasPorProcesso*orderOfMatrix, MPI_INT, vetorRecebLinhas, linhasPorProcesso*orderOfMatrix, MPI_INT, 0, MPI_COMM_WORLD);
         MPI_Scatter(vetorB, linhasPorProcesso, MPI_INT, vetorRecebimentoB, linhasPorProcesso, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Scatter(diagPrincipal, linhasPorProcesso, MPI_INT, vetorRecebimentoDiag, linhasPorProcesso, MPI_INT, 0, MPI_COMM_WORLD);
         //Print debug
         printf("\nVetor da matriz\n");
         j=0;
@@ -141,23 +173,107 @@ int main(int argc, char *argv[])
         for(i=0;i<linhasPorProcesso;i++){
                 printf("%d ",vetorRecebimentoB[i]);
         }
-        
-        //Matriz auxiliar
-        int **matrizAuxiliar;
-        matrizAuxiliar= (int**)malloc(linhasPorProcesso*sizeof(int*));
-        for(i=0;i<orderOfMatrix;i++){
-            matrizAuxiliar[i]=(int*)malloc(orderOfMatrix*sizeof(int));
-        }
-        k=0;
-        printf("\nPrint da matriz auxiliar\n");
+
+        printf("\n vetor diagonal recebido \n");
         for(i=0;i<linhasPorProcesso;i++){
-            for(j=0;i<orderOfMatrix;j++){
-                matrizAuxiliar[i][j] = vetorRecebLinhas[k];
-                k++;
-                printf("%d ",matrizAuxiliar[i][j]);
-            }
-            printf("\n");
+                printf("%d ",vetorRecebimentoDiag[i]);
         }
+
+        //Critério de convergência
+        int criterioLinha=1;
+        int *somaLinha;
+        somaLinha = malloc(linhasPorProcesso*sizeof(int));
+        for(i=0;i<linhasPorProcesso;i++){
+            somaLinha[i]=0;
+        }
+        int w = my_rank*linhasPorProcesso;
+        int elementoDiagonalAtual;
+        j=0;k=0;
+        #pragma omp parallel for private(j,k) num_threads(numberOfThreads)
+        for(i=0;i<linhasPorProcesso*orderOfMatrix;i++)
+        {
+            if(criterioLinha) //verificar se da certo msm
+                continue;
+            if(j==orderOfMatrix){
+                    j=0;
+                    k++;
+            }
+            if(j != w+k){
+                somaLinha[k] = somaLinha[k] + vetorRecebLinhas[i];
+            }
+            if(somaLinha[k] > vetorRecebimentoDiag[k]){
+                criterioLinha=0;
+                printf("\n Falhou no critério, na linha %d",k+w);
+            }
+            j++;
+        }
+        int reducaoCriterio;
+        MPI_Reduce(&criterioLinha, &reducaoCriterio, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&reducaoCriterio, 1, MPI_INT, 0, MPI_COMM_WORLD); //Envia a todos os processos se o criterio foi bem sucedido, se sim continua,
+        if(reducaoCriterio){
+            printf("Passou pelo criterio das linhas.\n");
+        }else{
+            fflush(stdout);
+            MPI_Finalize();
+            return 0;
+        }
+        printf("\n Vetor Inicial \n");
+        float *vetorRespostaInicial;
+        vetorRespostaInicial = (float*)malloc(linhasPorProcesso*sizeof(float));
+        for(i=0;i<linhasPorProcesso;i++){
+            vetorRespostaInicial[i] = (float) vetorRecebimentoB[i]/(float) vetorRecebimentoDiag[i];
+            printf("%d / %d \n",vetorRecebimentoB[i],vetorRecebimentoDiag[i]);
+        }
+        float *resultadosAtuais;
+        resultadosAtuais = (float*)malloc(linhasPorProcesso*sizeof(float));
+        int max=1;
+        float maximoDiff, maximoValor;
+        float maximoDiffReduzido, maximoValorReduzido;
+        printf("\n Inicio das Iterações \n");
+        for(k=0;k<max;k++){
+            maximoDiff = 0;
+            maximoValor = 0;
+            j=0;k=0;
+            for(i=0;i<linhasPorProcesso;i++){
+                resultadosAtuais[i]=0;
+                for(j=0;j<orderOfMatrix;j++){
+                    // se for o elemento da diag principal resultado atual + = ...
+                    //senão resultado atual -= ...
+                    //k++
+                }
+                //if valor maximo
+                //if maxima diferença
+            }
+            /* for(i=0;i<linhasPorProcesso*orderOfMatrix;i++){
+                if(j==orderOfMatrix){
+                    j=0;
+                    k++;
+                }
+                if(vetorRecebLinhas[i] == vetorRecebimentoDiag[k]){
+                    resultadosAtuais[k] += (float)vetorRecebimentoB[k] / vetorRecebimentoDiag[k];
+                    printf("\n + %d / %d", vetorRecebimentoB[k],vetorRecebimentoDiag[k]);
+                }else{
+                    resultadosAtuais[k] -= ((float)vetorRecebLinhas[i] * vetorRespostaInicial[j] / (float) vetorRecebimentoDiag[k]);
+                    printf("\n - (%d * %.2f) / %d", vetorRecebLinhas[i], vetorRespostaInicial[j], vetorRecebimentoDiag[k]);
+                }
+                if(j==orderOfMatrix-1){
+                    if(fabs(resultadosAtuais[k]) > maximoValor){
+                        maximoValor = fabs(resultadosAtuais[k]);
+                        printf("\nmaximoValorAtualizado: %f",maximoValor);
+                    }
+                    if(fabs(resultadosAtuais[k] - vetorRespostaInicial[k])){
+                        maximoDiff = fabs(resultadosAtuais[k] - vetorRespostaInicial[k]);
+                        printf("\nmaximoDiffAtualizado: (%.4f - %.4f) = %.4f",resultadosAtuais[k],vetorRespostaInicial[k],maximoDiff);
+                    }
+                }
+                j++;
+                printf("\n");
+            } */
+        }
+
+        
+
+        
 
     }// Fim do else que separa os spawns do root process
     fflush(stdout);
