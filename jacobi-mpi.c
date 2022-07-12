@@ -30,9 +30,9 @@ int main(int argc, char *argv[])
 
     if(parentcomm == MPI_COMM_NULL) //Processo PAI Bootstrap do programa.
     {
-        //printf("\nEscolha a linha que será usada no teste do resultado: ");
-        //scanf("%d", &linhaEscolhida);
-        linhaEscolhida=1;
+        printf("\nEscolha a linha que será usada no teste do resultado: ");
+        scanf("%d", &linhaEscolhida);
+        //linhaEscolhida=1;
 
         if(P == 1){
             printf("Use pelo menos 2 processos \n");
@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
             }
             int* linhaTeste = (int*)malloc(orderOfMatrix*sizeof(int));
             //Preenchimento
-            /* for(i=0;i<orderOfMatrix;i++){
+            for(i=0;i<orderOfMatrix;i++){
                 for(j=0;j<orderOfMatrix;j++){
                     if (i != j){
                         matrix[i][j] = (rand() % (RAND_UPPER_BOUND2 - RAND_LOWER_BOUND + 1)) + RAND_LOWER_BOUND;
@@ -105,9 +105,9 @@ int main(int argc, char *argv[])
                         linhaTeste[j]=matrix[i][j];
                 }
                 vetorB[i] = (rand() % (10*RAND_UPPER_BOUND - RAND_LOWER_BOUND + 1)) + 2*somaProvisoria[i];
-            } */
+            }
 
-            matrix[0][0] =4; //Diagonal Princ (geracao hardcoded pra testes.)
+           /*  matrix[0][0] =4; //Diagonal Princ (geracao hardcoded pra testes.)
 		    matrix[0][1] =2;
 		    matrix[0][2] =1;
             // matrix[0][3] =0;
@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
 
             diagPrincipal[0]=4;
             diagPrincipal[1]=3;
-            diagPrincipal[2]=6;
+            diagPrincipal[2]=6; */
 
             j=0;
             k=0;
@@ -219,62 +219,74 @@ int main(int argc, char *argv[])
         }
         printf("\n Vetor Inicial \n");
         float *vetorRespostaInicial;
-        vetorRespostaInicial = (float*)malloc(linhasPorProcesso*sizeof(float));
-        for(i=0;i<linhasPorProcesso;i++){
-            vetorRespostaInicial[i] = (float) vetorRecebimentoB[i]/(float) vetorRecebimentoDiag[i];
-            printf("%d / %d \n",vetorRecebimentoB[i],vetorRecebimentoDiag[i]);
+        vetorRespostaInicial = (float*)malloc(orderOfMatrix*sizeof(float));
+        if(my_rank==0){
+            for(i=0;i<orderOfMatrix;i++){
+                vetorRespostaInicial[i] = (float) vetorB[i]/(float) diagPrincipal[i];
+                printf("%d / %d \n",vetorB[i],diagPrincipal[i]);
+            }
         }
+        int numIter=0;
+        MPI_Bcast(vetorRespostaInicial, orderOfMatrix, MPI_FLOAT, 0, MPI_COMM_WORLD);
         float *resultadosAtuais;
         resultadosAtuais = (float*)malloc(linhasPorProcesso*sizeof(float));
-        int max=1;
         float maximoDiff, maximoValor;
         float maximoDiffReduzido, maximoValorReduzido;
+        w = my_rank*linhasPorProcesso;
         printf("\n Inicio das Iterações \n");
-        for(k=0;k<max;k++){
+        MPI_Barrier(MPI_COMM_WORLD);
+        do {
             maximoDiff = 0;
             maximoValor = 0;
-            j=0;k=0;
-            for(i=0;i<linhasPorProcesso;i++){
+            for(i=0;i<linhasPorProcesso;i++){ //Não era pra ser nao, era pra cad aprocesso ter o seu valor independente.
+                printf("\n Line %d: ", w+i);
                 resultadosAtuais[i]=0;
                 for(j=0;j<orderOfMatrix;j++){
-                    // se for o elemento da diag principal resultado atual + = ...
-                    //senão resultado atual -= ...
-                    //k++
-                }
-                //if valor maximo
-                //if maxima diferença
-            }
-            /* for(i=0;i<linhasPorProcesso*orderOfMatrix;i++){
-                if(j==orderOfMatrix){
-                    j=0;
-                    k++;
-                }
-                if(vetorRecebLinhas[i] == vetorRecebimentoDiag[k]){
-                    resultadosAtuais[k] += (float)vetorRecebimentoB[k] / vetorRecebimentoDiag[k];
-                    printf("\n + %d / %d", vetorRecebimentoB[k],vetorRecebimentoDiag[k]);
-                }else{
-                    resultadosAtuais[k] -= ((float)vetorRecebLinhas[i] * vetorRespostaInicial[j] / (float) vetorRecebimentoDiag[k]);
-                    printf("\n - (%d * %.2f) / %d", vetorRecebLinhas[i], vetorRespostaInicial[j], vetorRecebimentoDiag[k]);
-                }
-                if(j==orderOfMatrix-1){
-                    if(fabs(resultadosAtuais[k]) > maximoValor){
-                        maximoValor = fabs(resultadosAtuais[k]);
-                        printf("\nmaximoValorAtualizado: %f",maximoValor);
-                    }
-                    if(fabs(resultadosAtuais[k] - vetorRespostaInicial[k])){
-                        maximoDiff = fabs(resultadosAtuais[k] - vetorRespostaInicial[k]);
-                        printf("\nmaximoDiffAtualizado: (%.4f - %.4f) = %.4f",resultadosAtuais[k],vetorRespostaInicial[k],maximoDiff);
+                    if(vetorRecebLinhas[i*orderOfMatrix+j] == vetorRecebimentoDiag[i]){
+                        resultadosAtuais[i] += ((float)vetorRecebimentoB[i]/(float)vetorRecebLinhas[i*orderOfMatrix + j]);
+                        printf("\n + %d / %d", vetorRecebimentoB[i],vetorRecebLinhas[i*orderOfMatrix + j]);
+                    }else{
+                        resultadosAtuais[i] -=  ((float) vetorRecebLinhas[i*orderOfMatrix + j] * vetorRespostaInicial[j] / (float) vetorRecebimentoDiag[i]);
+                        printf("\n - (%d * %.2f) / %d", vetorRecebLinhas[i*orderOfMatrix + j], vetorRespostaInicial[j], vetorRecebimentoDiag[i]);
                     }
                 }
-                j++;
                 printf("\n");
-            } */
+                printf("%f ", resultadosAtuais[i]); //aqui ele printa certo
+                if(fabs(resultadosAtuais[i]) > maximoValor){
+                    maximoValor = fabs(resultadosAtuais[i]);
+                    printf("\nmaximoValorAtualizado: %f", maximoValor);
+                }
+                if(fabs(resultadosAtuais[i] - vetorRespostaInicial[w+i]) > maximoDiff){
+                    maximoDiff = fabs(resultadosAtuais[i] - vetorRespostaInicial[w+i]);
+                    printf("\nmaximoDiffAtualizado: (%.4f - %.4f) = %.4f",resultadosAtuais[i],vetorRespostaInicial[i],maximoDiff);
+                }
+                if(my_rank==0){
+                    numIter++;
+                }
+            }
+            MPI_Allreduce(&maximoValor, &maximoValorReduzido, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
+            MPI_Allreduce(&maximoDiff, &maximoDiffReduzido, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
+            printf("\nMaximoVal recebido pos reducao: %f", maximoValorReduzido);
+            printf("\nMaximoDiff recebido pos reducao: %f", maximoDiffReduzido);
+            printf("\nMaxDiff/MaxVal:  %f \n", maximoDiffReduzido/maximoValorReduzido);
+            MPI_Allgather(resultadosAtuais, linhasPorProcesso, MPI_FLOAT, vetorRespostaInicial, linhasPorProcesso, MPI_FLOAT, MPI_COMM_WORLD);
+            if(my_rank==0){
+                printf("\nResultado recebido pos iteracao\n");
+                for(i=0; i<orderOfMatrix; i++){
+                    printf("%f ", vetorRespostaInicial[i]);
+                }
+            }
+        }while(maximoDiffReduzido/maximoValorReduzido >= 0.0015);
+        //saindo do do while significa que convergiu,podemos testar a resposta contra a linha escolhida la no inicio
+        MPI_Barrier(MPI_COMM_WORLD);
+        if(my_rank ==0){ //tendeu
+            float resultadoFinal=0;
+            for(i=0;i<orderOfMatrix;i++){
+                resultadoFinal += matrix[linhaEscolhida][i] * vetorRespostaInicial[i];
+            }
+            printf("\nTemos: %.4f = %d",resultadoFinal,vetorB[linhaEscolhida]);
+            printf("\nConvergiu em %d iteracoes", numIter);
         }
-
-        
-
-        
-
     }// Fim do else que separa os spawns do root process
     fflush(stdout);
     MPI_Finalize();
