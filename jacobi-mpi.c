@@ -53,8 +53,6 @@ int main(int argc, char *argv[])
         }else{
             MPI_Comm_spawn( "./jacobi-mpi", argv, N, MPI_INFO_NULL, root, MPI_COMM_WORLD, &intercomm, errcodes );
         }
-
-        printf("I'm the parent number %d on processor %s.\n", my_rank, processor_name);
         MPI_Send(&linhaEscolhida, 1, MPI_INT, 0, 1, intercomm);
         fflush(0);
     }else
@@ -68,7 +66,6 @@ int main(int argc, char *argv[])
 
         //Calculo quantidade de linhas por processo
         int linhasPorProcesso = orderOfMatrix/NumberOfProcecess;
-        printf("\n Quantas linhas por processo: %d  e resto: %d \n",linhasPorProcesso, orderOfMatrix%NumberOfProcecess);
         //Fim calculo linhasPorProcesso
         int *vetorRecebLinhas, *vetorRecebimentoB, *vetorRecebimentoDiag;
         int **matrix;
@@ -78,7 +75,6 @@ int main(int argc, char *argv[])
         {
             MPI_Status status;
             MPI_Recv(&linhaEscolhida, 1, MPI_INT, 0, 1, parentcomm, &status); //Recebimento da linha de testagem.
-            printf("I'm the spawned process number %d on processor %s.\n A linha escolhida foi: %d \n", my_rank, processor_name,linhaEscolhida);
             //*****************************GERANDO MATRIZ**************************************
             srand(64591);
             vetorB = (int*)malloc(orderOfMatrix*sizeof(int));
@@ -104,7 +100,7 @@ int main(int argc, char *argv[])
                     if(i==linhaEscolhida)
                         linhaTeste[j]=matrix[i][j];
                 }
-                vetorB[i] = (rand() % (10*RAND_UPPER_BOUND - RAND_LOWER_BOUND + 1)) + 2*somaProvisoria[i];
+                vetorB[i] = (rand() % ( (int)0.1*somaProvisoria[i] - RAND_LOWER_BOUND + 1)) + RAND_LOWER_BOUND;
             }
 
            /*  matrix[0][0] =4; //Diagonal Princ (geracao hardcoded pra testes.)
@@ -141,10 +137,8 @@ int main(int argc, char *argv[])
                 if(j==orderOfMatrix){
                     j=0;
                     k++;
-                    printf("\n");
                 }
                 vetEnvioMatrix[i] = matrix[k][j];
-                printf("%d ",vetEnvioMatrix[i]);
                 j++;
             }
             //*****************************GERANDO MATRIZ**************************************  
@@ -155,29 +149,8 @@ int main(int argc, char *argv[])
         MPI_Scatter(vetEnvioMatrix, linhasPorProcesso*orderOfMatrix, MPI_INT, vetorRecebLinhas, linhasPorProcesso*orderOfMatrix, MPI_INT, 0, MPI_COMM_WORLD);
         MPI_Scatter(vetorB, linhasPorProcesso, MPI_INT, vetorRecebimentoB, linhasPorProcesso, MPI_INT, 0, MPI_COMM_WORLD);
         MPI_Scatter(diagPrincipal, linhasPorProcesso, MPI_INT, vetorRecebimentoDiag, linhasPorProcesso, MPI_INT, 0, MPI_COMM_WORLD);
-        //Print debug
-        printf("\nVetor da matriz\n");
         j=0;
         k=0;
-        for(i=0;i<linhasPorProcesso*orderOfMatrix;i++){
-                if(j==orderOfMatrix){
-                    j=0;
-                    k++;
-                    printf("\n");
-                }
-                printf("%d ",vetorRecebLinhas[i]);
-                j++;
-        }
-        //fim print dos recebimentos
-        printf("\n vetor B recebido \n");
-        for(i=0;i<linhasPorProcesso;i++){
-                printf("%d ",vetorRecebimentoB[i]);
-        }
-
-        printf("\n vetor diagonal recebido \n");
-        for(i=0;i<linhasPorProcesso;i++){
-                printf("%d ",vetorRecebimentoDiag[i]);
-        }
 
         //Critério de convergência
         int criterioLinha=1;
@@ -211,19 +184,19 @@ int main(int argc, char *argv[])
         MPI_Reduce(&criterioLinha, &reducaoCriterio, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
         MPI_Bcast(&reducaoCriterio, 1, MPI_INT, 0, MPI_COMM_WORLD); //Envia a todos os processos se o criterio foi bem sucedido, se sim continua,
         if(reducaoCriterio){
-            printf("Passou pelo criterio das linhas.\n");
+            if(my_rank==0){
+                printf("Passou pelo criterio das linhas.\n");
+            }
         }else{
             fflush(stdout);
             MPI_Finalize();
             return 0;
         }
-        printf("\n Vetor Inicial \n");
         float *vetorRespostaInicial;
         vetorRespostaInicial = (float*)malloc(orderOfMatrix*sizeof(float));
         if(my_rank==0){
             for(i=0;i<orderOfMatrix;i++){
                 vetorRespostaInicial[i] = (float) vetorB[i]/(float) diagPrincipal[i];
-                printf("%d / %d \n",vetorB[i],diagPrincipal[i]);
             }
         }
         int numIter=0;
@@ -233,32 +206,27 @@ int main(int argc, char *argv[])
         float maximoDiff, maximoValor;
         float maximoDiffReduzido, maximoValorReduzido;
         w = my_rank*linhasPorProcesso;
-        printf("\n Inicio das Iterações \n");
+        if(my_rank==0){
+            printf("\n Inicio das Iterações \n");
+        }
         MPI_Barrier(MPI_COMM_WORLD);
         do {
             maximoDiff = 0;
             maximoValor = 0;
             for(i=0;i<linhasPorProcesso;i++){ //Não era pra ser nao, era pra cad aprocesso ter o seu valor independente.
-                printf("\n Line %d: ", w+i);
                 resultadosAtuais[i]=0;
                 for(j=0;j<orderOfMatrix;j++){
                     if(vetorRecebLinhas[i*orderOfMatrix+j] == vetorRecebimentoDiag[i]){
                         resultadosAtuais[i] += ((float)vetorRecebimentoB[i]/(float)vetorRecebLinhas[i*orderOfMatrix + j]);
-                        printf("\n + %d / %d", vetorRecebimentoB[i],vetorRecebLinhas[i*orderOfMatrix + j]);
                     }else{
                         resultadosAtuais[i] -=  ((float) vetorRecebLinhas[i*orderOfMatrix + j] * vetorRespostaInicial[j] / (float) vetorRecebimentoDiag[i]);
-                        printf("\n - (%d * %.2f) / %d", vetorRecebLinhas[i*orderOfMatrix + j], vetorRespostaInicial[j], vetorRecebimentoDiag[i]);
                     }
                 }
-                printf("\n");
-                printf("%f ", resultadosAtuais[i]); //aqui ele printa certo
                 if(fabs(resultadosAtuais[i]) > maximoValor){
                     maximoValor = fabs(resultadosAtuais[i]);
-                    printf("\nmaximoValorAtualizado: %f", maximoValor);
                 }
                 if(fabs(resultadosAtuais[i] - vetorRespostaInicial[w+i]) > maximoDiff){
                     maximoDiff = fabs(resultadosAtuais[i] - vetorRespostaInicial[w+i]);
-                    printf("\nmaximoDiffAtualizado: (%.4f - %.4f) = %.4f",resultadosAtuais[i],vetorRespostaInicial[i],maximoDiff);
                 }
                 if(my_rank==0){
                     numIter++;
@@ -266,21 +234,16 @@ int main(int argc, char *argv[])
             }
             MPI_Allreduce(&maximoValor, &maximoValorReduzido, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
             MPI_Allreduce(&maximoDiff, &maximoDiffReduzido, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
-            printf("\nMaximoVal recebido pos reducao: %f", maximoValorReduzido);
-            printf("\nMaximoDiff recebido pos reducao: %f", maximoDiffReduzido);
-            printf("\nMaxDiff/MaxVal:  %f \n", maximoDiffReduzido/maximoValorReduzido);
             MPI_Allgather(resultadosAtuais, linhasPorProcesso, MPI_FLOAT, vetorRespostaInicial, linhasPorProcesso, MPI_FLOAT, MPI_COMM_WORLD);
-            if(my_rank==0){
-                printf("\nResultado recebido pos iteracao\n");
-                for(i=0; i<orderOfMatrix; i++){
-                    printf("%f ", vetorRespostaInicial[i]);
-                }
-            }
         }while(maximoDiffReduzido/maximoValorReduzido >= 0.0015);
         //saindo do do while significa que convergiu,podemos testar a resposta contra a linha escolhida la no inicio
         MPI_Barrier(MPI_COMM_WORLD);
         if(my_rank ==0){ //tendeu
             float resultadoFinal=0;
+            if(linhaEscolhida > orderOfMatrix){
+                linhaEscolhida = 0;
+                printf("\nLinha escolhida fora dos limites, usando a linha 0\n");
+            }
             for(i=0;i<orderOfMatrix;i++){
                 resultadoFinal += matrix[linhaEscolhida][i] * vetorRespostaInicial[i];
             }
