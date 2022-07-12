@@ -32,7 +32,6 @@ int main(int argc, char *argv[])
     {
         printf("\nEscolha a linha que será usada no teste do resultado: ");
         scanf("%d", &linhaEscolhida);
-        //linhaEscolhida=1;
 
         if(P == 1){
             printf("Use pelo menos 2 processos \n");
@@ -46,9 +45,9 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        int root = 0;
+        int root = 0; 
         MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-        if(P<=N){
+        if(P<=N){ // Invocação dos processos filhos.
             MPI_Comm_spawn( "./jacobi-mpi", argv, P, MPI_INFO_NULL, root, MPI_COMM_WORLD, &intercomm, errcodes );
         }else{
             MPI_Comm_spawn( "./jacobi-mpi", argv, N, MPI_INFO_NULL, root, MPI_COMM_WORLD, &intercomm, errcodes );
@@ -64,6 +63,8 @@ int main(int argc, char *argv[])
         int numberOfThreads = atoi(argv[4]);  //Parametro de entrada, numero de threads por processo.
         int i,j,k;
 
+        double tempoConvergencia, tempoIteracoes;
+
         //Calculo quantidade de linhas por processo
         int linhasPorProcesso = orderOfMatrix/NumberOfProcecess;
         //Fim calculo linhasPorProcesso
@@ -71,7 +72,7 @@ int main(int argc, char *argv[])
         int **matrix;
         int *vetEnvioMatrix,*vetorB, *diagPrincipal;
 
-        if(my_rank==0)
+        if(my_rank==0) //Processo rank 0 realiza a geracao da matriz e o envio das cargas de trabalho.
         {
             MPI_Status status;
             MPI_Recv(&linhaEscolhida, 1, MPI_INT, 0, 1, parentcomm, &status); //Recebimento da linha de testagem.
@@ -103,33 +104,6 @@ int main(int argc, char *argv[])
                 vetorB[i] = (rand() % ( (int)0.1*somaProvisoria[i] - RAND_LOWER_BOUND + 1)) + RAND_LOWER_BOUND;
             }
 
-           /*  matrix[0][0] =4; //Diagonal Princ (geracao hardcoded pra testes.)
-		    matrix[0][1] =2;
-		    matrix[0][2] =1;
-            // matrix[0][3] =0;
-            matrix[1][0] =1;
-            matrix[1][1] =3; //Diagonal Princ
-            matrix[1][2] =1;
-        // matrix[1][3] =0;
-            matrix[2][0] =2;
-            matrix[2][1] =3;
-            matrix[2][2] =6; //Diagonal Princ
-        // matrix[2][3] =0;
-        // matrix[3][0] =5;
-        // matrix[3][1] =5;
-            //matrix[3][2] =5;
-            //matrix[3][3] =16; //Diagonal Princ
-
-            //int vetorB[4] = {7, -8, 6, 5};
-            vetorB[0]=7;
-            vetorB[1]=-8;
-            vetorB[2]=6;
-            //vetorB[3]=5;
-
-            diagPrincipal[0]=4;
-            diagPrincipal[1]=3;
-            diagPrincipal[2]=6; */
-
             j=0;
             k=0;
             for(i=0;i<orderOfMatrix*orderOfMatrix;i++)
@@ -143,6 +117,7 @@ int main(int argc, char *argv[])
             }
             //*****************************GERANDO MATRIZ**************************************  
         }
+        //Envio das cargas de trabalho.
         vetorRecebLinhas = (int*)malloc(linhasPorProcesso*orderOfMatrix*sizeof(int));
         vetorRecebimentoB = (int*)malloc(linhasPorProcesso*sizeof(int));
         vetorRecebimentoDiag =(int*)malloc(linhasPorProcesso*sizeof(int));
@@ -152,6 +127,10 @@ int main(int argc, char *argv[])
         j=0;
         k=0;
 
+        if(my_rank == 0){
+            tempoConvergencia = omp_get_wtime();
+            printf("Inicio do teste de convergencia");
+        }
         //Critério de convergência
         int criterioLinha=1;
         int *somaLinha;
@@ -165,7 +144,7 @@ int main(int argc, char *argv[])
         #pragma omp parallel for private(j,k) num_threads(numberOfThreads)
         for(i=0;i<linhasPorProcesso*orderOfMatrix;i++)
         {
-            if(criterioLinha) //verificar se da certo msm
+            if(criterioLinha) 
                 continue;
             if(j==orderOfMatrix){
                     j=0;
@@ -185,6 +164,7 @@ int main(int argc, char *argv[])
         MPI_Bcast(&reducaoCriterio, 1, MPI_INT, 0, MPI_COMM_WORLD); //Envia a todos os processos se o criterio foi bem sucedido, se sim continua,
         if(reducaoCriterio){
             if(my_rank==0){
+                tempoConvergencia = omp_get_wtime() - tempoConvergencia;
                 printf("Passou pelo criterio das linhas.\n");
             }
         }else{
@@ -192,6 +172,7 @@ int main(int argc, char *argv[])
             MPI_Finalize();
             return 0;
         }
+        //Inicio do processo iterativo de jacobi
         float *vetorRespostaInicial;
         vetorRespostaInicial = (float*)malloc(orderOfMatrix*sizeof(float));
         if(my_rank==0){
@@ -208,12 +189,14 @@ int main(int argc, char *argv[])
         w = my_rank*linhasPorProcesso;
         if(my_rank==0){
             printf("\n Inicio das Iterações \n");
+            tempoIteracoes = omp_get_wtime();
         }
         MPI_Barrier(MPI_COMM_WORLD);
         do {
             maximoDiff = 0;
             maximoValor = 0;
-            for(i=0;i<linhasPorProcesso;i++){ //Não era pra ser nao, era pra cad aprocesso ter o seu valor independente.
+            #pragma omp parallel for private(i,j) reduction(max: maximoValor) reduction(max: maximoDiff) num_threads(numberOfThreads)
+            for(i=0;i<linhasPorProcesso;i++){ 
                 resultadosAtuais[i]=0;
                 for(j=0;j<orderOfMatrix;j++){
                     if(vetorRecebLinhas[i*orderOfMatrix+j] == vetorRecebimentoDiag[i]){
@@ -228,18 +211,19 @@ int main(int argc, char *argv[])
                 if(fabs(resultadosAtuais[i] - vetorRespostaInicial[w+i]) > maximoDiff){
                     maximoDiff = fabs(resultadosAtuais[i] - vetorRespostaInicial[w+i]);
                 }
-                if(my_rank==0){
-                    numIter++;
-                }
             }
             MPI_Allreduce(&maximoValor, &maximoValorReduzido, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
             MPI_Allreduce(&maximoDiff, &maximoDiffReduzido, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
             MPI_Allgather(resultadosAtuais, linhasPorProcesso, MPI_FLOAT, vetorRespostaInicial, linhasPorProcesso, MPI_FLOAT, MPI_COMM_WORLD);
+            if(my_rank==0){
+                    numIter++;
+            }
         }while(maximoDiffReduzido/maximoValorReduzido >= 0.0015);
         //saindo do do while significa que convergiu,podemos testar a resposta contra a linha escolhida la no inicio
-        MPI_Barrier(MPI_COMM_WORLD);
-        if(my_rank ==0){ //tendeu
+        //MPI_Barrier(MPI_COMM_WORLD);
+        if(my_rank ==0){ 
             float resultadoFinal=0;
+            tempoIteracoes = omp_get_wtime() - tempoIteracoes;
             if(linhaEscolhida > orderOfMatrix){
                 linhaEscolhida = 0;
                 printf("\nLinha escolhida fora dos limites, usando a linha 0\n");
@@ -248,7 +232,10 @@ int main(int argc, char *argv[])
                 resultadoFinal += matrix[linhaEscolhida][i] * vetorRespostaInicial[i];
             }
             printf("\nTemos: %.4f = %d",resultadoFinal,vetorB[linhaEscolhida]);
-            printf("\nConvergiu em %d iteracoes", numIter);
+            printf("\nConvergiu em %d iteracoes\n", numIter);
+            printf("Tempo Paralelo Convergencia: %.5f segundos\n", tempoConvergencia);
+            printf("Tempo Paralelo Iteracoes: %.5f segundos\n", tempoIteracoes);
+            printf("Tempo total: %.5f segundos\n", (tempoConvergencia+tempoIteracoes));
         }
     }// Fim do else que separa os spawns do root process
     fflush(stdout);
